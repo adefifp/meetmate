@@ -1,0 +1,148 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  tz            String?
+
+  accounts      Account[]
+  sessions      Session[]
+  plans         Plan[]    @relation("UserPlans")
+
+  auditCreated  DateTime  @default(now())
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum ParticipantStatus {
+  pending
+  accepted
+  declined
+}
+
+enum EmailType {
+  invite
+  reminder
+}
+
+model Plan {
+  id             String   @id @default(cuid())
+  ownerId        String
+  title          String
+  durationMins   Int
+  minAttendees   Int
+  dateFrom       DateTime
+  dateTo         DateTime
+  windowStart    Int
+  windowEnd      Int
+  tz             String
+  token          String    @unique
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  owner          User      @relation("UserPlans", fields: [ownerId], references: [id], onDelete: Cascade)
+  participants   Participant[]
+  suggestions    Suggestion[]
+  emails         EmailLog[]
+}
+model Participant {
+  id         String             @id @default(cuid())
+  planId     String
+  email      String
+  name       String?
+  tz         String?
+  status     ParticipantStatus  @default(pending)
+
+  plan       Plan               @relation(fields: [planId], references: [id], onDelete: Cascade)
+  busy       CalendarBusy[]
+
+  @@index([planId])
+}
+
+model CalendarBusy {
+  id             String   @id @default(cuid())
+  participantId  String
+  start          DateTime
+  end            DateTime
+  source         String
+  createdAt      DateTime  @default(now())
+
+  participant    Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@index([participantId, start, end])
+}
+
+model Suggestion {
+  id        String   @id @default(cuid())
+  planId    String
+  start     DateTime
+  end       DateTime
+  score     Float
+
+  plan      Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId, score(sort: Desc)])
+}
+
+model EmailLog {
+  id              String   @id @default(cuid())
+  planId          String
+  to              String
+  type            EmailType
+  attempt         Int       @default(0)
+  status          String
+  idempotencyKey  String    @unique
+  createdAt       DateTime  @default(now())
+
+  plan            Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+}

@@ -1,26 +1,45 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Base theme (plain CSS so it never depends on @apply) */
+html { color-scheme: light; }
+body { background-color: #f8fafc; color: #0f172a; } /* slate-50 / slate-900 */
+a { color: #4f46e5; }               /* indigo-600 */
+a:hover { color: #4338ca; }         /* indigo-700 */
+
+/* Layout tokens */
+.container-page { @apply mx-auto max-w-3xl px-4 md:px-6; }
+
+/* Card */
+.card { @apply bg-white rounded-2xl shadow-sm ring-1 ring-slate-200; }
+.card-body { @apply p-4 md:p-6; }
+.section { @apply space-y-4; }
+
+/* Typography */
+.h1 { @apply text-2xl md:text-3xl font-semibold tracking-tight; }
+.h2 { @apply text-lg md:text-xl font-medium; }
+.muted { @apply text-slate-600; }
+
+/* Form controls */
+.input {
+  @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2
+         focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500;
+}
+.field { @apply grid gap-1; }
+.label { @apply text-sm text-slate-700; }
+.help  { @apply text-xs text-slate-500; }
+
+/* Buttons */
+.btn {
+  @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium
+         focus:outline-none focus:ring-2 focus:ring-indigo-500;
+}
+/* IMPORTANT: no "btn" inside @apply here */
+.btn-primary {
+  @apply bg-indigo-600 text-white hover:bg-indigo-700 active:bg-indigo-800;
+}
+.btn-ghost {
+  @apply bg-transparent text-slate-700 hover:bg-slate-100;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+/* Badges */
+.badge { @apply inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 ring-1 ring-slate-200; }

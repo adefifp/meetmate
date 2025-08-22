@@ -21,11 +21,11 @@ model User {
   image         String?
   tz            String?
 
-  accounts      Account[]
-  sessions      Session[]
-  plans         Plan[]    @relation("UserPlans")
+  accounts Account[]
+  sessions Session[]
+  plans    Plan[]    @relation("UserPlans")
 
-  auditCreated  DateTime  @default(now())
+  auditCreated DateTime @default(now())
 }
 
 model Account {
@@ -76,73 +76,75 @@ enum EmailType {
 }
 
 model Plan {
-  id             String   @id @default(cuid())
-  ownerId        String
-  title          String
-  durationMins   Int
-  minAttendees   Int
-  dateFrom       DateTime
-  dateTo         DateTime
-  windowStart    Int
-  windowEnd      Int
-  tz             String
-  token          String    @unique
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id           String   @id @default(cuid())
+  ownerId      String
+  title        String
+  durationMins Int
+  minAttendees Int
+  dateFrom     DateTime
+  dateTo       DateTime
+  windowStart  Int
+  windowEnd    Int
+  tz           String
+  token        String   @unique @default(uuid())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  owner          User      @relation("UserPlans", fields: [ownerId], references: [id], onDelete: Cascade)
-  participants   Participant[]
-  suggestions    Suggestion[]
-  emails         EmailLog[]
+  owner        User          @relation("UserPlans", fields: [ownerId], references: [id], onDelete: Cascade)
+  participants Participant[]
+  suggestions  Suggestion[]
+  emails       EmailLog[]
 }
+
 model Participant {
-  id         String             @id @default(cuid())
-  planId     String
-  email      String
-  name       String?
-  tz         String?
-  status     ParticipantStatus  @default(pending)
+  id     String            @id @default(cuid())
+  planId String
+  email  String
+  name   String?
+  tz     String?
+  status ParticipantStatus @default(pending)
 
-  plan       Plan               @relation(fields: [planId], references: [id], onDelete: Cascade)
-  busy       CalendarBusy[]
+  plan Plan           @relation(fields: [planId], references: [id], onDelete: Cascade)
+  busy CalendarBusy[]
 
+  @@unique([planId, email])
   @@index([planId])
 }
 
 model CalendarBusy {
-  id             String   @id @default(cuid())
-  participantId  String
-  start          DateTime
-  end            DateTime
-  source         String
-  createdAt      DateTime  @default(now())
+  id            String   @id @default(cuid())
+  participantId String
+  start         DateTime
+  end           DateTime
+  source        String
+  createdAt     DateTime @default(now())
 
-  participant    Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  participant Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
 
   @@index([participantId, start, end])
 }
 
 model Suggestion {
-  id        String   @id @default(cuid())
-  planId    String
-  start     DateTime
-  end       DateTime
-  score     Float
+  id     String   @id @default(cuid())
+  planId String
+  start  DateTime
+  end    DateTime
+  score  Float
 
-  plan      Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
 
   @@index([planId, score(sort: Desc)])
 }
 
 model EmailLog {
-  id              String   @id @default(cuid())
-  planId          String
-  to              String
-  type            EmailType
-  attempt         Int       @default(0)
-  status          String
-  idempotencyKey  String    @unique
-  createdAt       DateTime  @default(now())
+  id             String    @id @default(cuid())
+  planId         String
+  to             String
+  type           EmailType
+  attempt        Int       @default(0)
+  status         String
+  idempotencyKey String    @unique
+  createdAt      DateTime  @default(now())
 
-  plan            Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
 }

@@ -1,10 +1,10 @@
-// src/app/(app)/plans/new/page.tsx
 import { z } from "zod";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/db";
 import { randomUUID } from "crypto";
+import CreatePlanForm from "./CreatePlanForm";
 
 const PlanSchema = z.object({
   title: z.string().min(3),
@@ -15,10 +15,13 @@ const PlanSchema = z.object({
   dateTo: z.coerce.date(),
   windowStart: z.coerce.number().int().min(0).max(23),
   windowEnd: z.coerce.number().int().min(0).max(23),
-});
+}).refine(d => d.dateFrom < d.dateTo, { path: ["dateTo"], message: "Window end must be after start." })
+  .refine(d => d.windowStart !== d.windowEnd, { path: ["windowEnd"], message: "Day window must span some hours." });
+
+type ActionResult = { ok: true } | { ok: false; error: string };
 
 export default function NewPlanPage() {
-  async function createPlan(formData: FormData) {
+  async function createPlan(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
     "use server";
 
     const parsed = PlanSchema.safeParse({
@@ -31,14 +34,14 @@ export default function NewPlanPage() {
       windowStart: formData.get("windowStart"),
       windowEnd: formData.get("windowEnd"),
     });
-    if (!parsed.success) throw new Error("Invalid form data");
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid form data." };
 
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) throw new Error("Not authenticated");
+    if (!session?.user?.id) return { ok: false, error: "Please sign in." };
 
     const plan = await prisma.plan.create({
       data: {
-        token: randomUUID(), // remove if your Prisma schema has @default(uuid()) and you've regenerated
+        token: randomUUID(),
         ownerId: session.user.id,
         title: parsed.data.title,
         durationMins: parsed.data.durationMins,
@@ -52,65 +55,13 @@ export default function NewPlanPage() {
       select: { token: true },
     });
 
-    redirect(`/p/${plan.token}`);
+    redirect(`/p/${plan.token}`); // success path leaves the page
   }
 
   return (
     <div className="container-page space-y-6">
-  <h1 className="h1">Create a new plan</h1>
-
-  <form action={createPlan} className="card">
-    <div className="card-body section">
-      <label className="field">
-        <span className="label">Title</span>
-        <input name="title" className="input" required />
-      </label>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="field">
-          <span className="label">Duration (minutes)</span>
-          <input name="durationMins" type="number" min={5} defaultValue={30} className="input" required />
-        </label>
-        <label className="field">
-          <span className="label">Minimum attendees</span>
-          <input name="minAttendees" type="number" min={1} defaultValue={2} className="input" required />
-        </label>
-      </div>
-
-      <label className="field">
-        <span className="label">Timezone (IANA)</span>
-        <input name="tz" placeholder="America/New_York" className="input" required />
-        <span className="help">Use a valid IANA TZ like America/Los_Angeles</span>
-      </label>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="field">
-          <span className="label">Window start</span>
-          <input name="dateFrom" type="datetime-local" className="input" required />
-        </label>
-        <label className="field">
-          <span className="label">Window end</span>
-          <input name="dateTo" type="datetime-local" className="input" required />
-        </label>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="field">
-          <span className="label">Day window start (0–23)</span>
-          <input name="windowStart" type="number" min={0} max={23} defaultValue={9} className="input" required />
-        </label>
-        <label className="field">
-          <span className="label">Day window end (0–23)</span>
-          <input name="windowEnd" type="number" min={0} max={23} defaultValue={18} className="input" required />
-        </label>
-      </div>
-
-      <div className="flex gap-3">
-  <button type="submit" className="btn btn-primary">Create plan</button>
-  <a href="/plans" className="btn btn-ghost">Cancel</a>
-</div>
+      <h1 className="h1">Create a new plan</h1>
+      <CreatePlanForm action={createPlan} />
     </div>
-  </form>
-</div>
   );
 }

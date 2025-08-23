@@ -3,11 +3,18 @@ import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
+import JoinAvailability from "./JoinAvailability";
+
 
 export const dynamic = "force-dynamic";
 
 /* ---------------------------- helpers (pure) ---------------------------- */
-
+const LOCALE: Intl.LocalesArgument = "en-US";
+const fmtOpts = (tz: string) =>
+  ({ timeZone: tz, dateStyle: "medium", timeStyle: "short" } as const);
+const fmt = (d: Date | string, tz: string) =>
+  new Date(d).toLocaleString(LOCALE, fmtOpts(tz));
+type ActionResult = { ok: boolean; error?: string };
 function addMinutes(d: Date, mins: number) {
   return new Date(d.getTime() + mins * 60_000);
 }
@@ -152,70 +159,86 @@ async function getPlanByToken(token: string) {
 /* --------------------------- server actions ---------------------------- */
 
 // Single action: ensure participant exists/updated and optionally add one busy block
-async function joinOrUpdateWithBusy(formData: FormData) {
+async function joinOrUpdateWithBusy(
+  _prev: ActionResult | null,
+  formData: FormData
+): Promise<ActionResult> {
   "use server";
 
-  const S = z.object({
-    token: z.string().min(1),
-    email: z.string().email(),
-    name: z.string().optional(),
-    start: z.string().optional(),
-    end: z.string().optional(),
-  });
-
-  const { token, email, name, start, end } = S.parse({
-    token: formData.get("token"),
-    email: formData.get("email"),
-    name: formData.get("name") ?? undefined,
-    start: formData.get("start")?.toString(),
-    end: formData.get("end")?.toString(),
-  });
-
-  const plan = await prisma.plan.findUnique({
-    where: { token },
-    select: { id: true, dateFrom: true, dateTo: true },
-  });
-  if (!plan) throw new Error("Plan not found");
-
-  // find-or-create participant (no dependency on composite unique types)
-  const existing = await prisma.participant.findFirst({
-    where: { planId: plan.id, email },
-    select: { id: true },
-  });
-
-  let participantId: string;
-  if (existing) {
-    await prisma.participant.update({
-      where: { id: existing.id },
-      data: { name: name ?? null },
+  try {
+    const S = z.object({
+      token: z.string().min(1),
+      email: z.string().email(),
+      name: z.string().optional(),
     });
-    participantId = existing.id;
-  } else {
-    const created = await prisma.participant.create({
-      data: { planId: plan.id, email, name: name ?? null },
+
+    const { token, email, name } = S.parse({
+      token: formData.get("token"),
+      email: formData.get("email"),
+      name: formData.get("name") ?? undefined,
+    });
+
+    const starts = formData.getAll("start").map((v) => v?.toString()).filter(Boolean) as string[];
+    const ends   = formData.getAll("end").map((v) => v?.toString()).filter(Boolean) as string[];
+    if (starts.length !== ends.length) {
+      return { ok: false, error: "Each busy start needs a matching end." };
+    }
+
+    const plan = await prisma.plan.findUnique({
+      where: { token },
+      select: { id: true, dateFrom: true, dateTo: true },
+    });
+    if (!plan) return { ok: false, error: "Plan not found." };
+
+    // ensure participant exists / update name
+    const existing = await prisma.participant.findFirst({
+      where: { planId: plan.id, email },
       select: { id: true },
     });
-    participantId = created.id;
-  }
+    const participantId =
+      existing?.id ??
+      (
+        await prisma.participant.create({
+          data: { planId: plan.id, email, name: name ?? null },
+          select: { id: true },
+        })
+      ).id;
 
-  // optional busy block
-  if (start && end) {
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    if (!(startDate instanceof Date && !isNaN(+startDate) && endDate instanceof Date && !isNaN(+endDate) && startDate < endDate)) {
-      throw new Error("Invalid busy time (check start/end).");
+    if (existing && name) {
+      await prisma.participant.update({ where: { id: participantId }, data: { name } });
     }
-    if (startDate < plan.dateFrom || endDate > plan.dateTo) {
-      throw new Error("Busy time must be within the plan window.");
+
+    // build valid busy rows
+    const rows: { participantId: string; start: Date; end: Date; source: string }[] = [];
+    for (let i = 0; i < starts.length; i++) {
+      const s = new Date(starts[i]!);
+      const e = new Date(ends[i]!);
+      if (!(s instanceof Date && !isNaN(+s) && e instanceof Date && !isNaN(+e) && s < e)) {
+        return { ok: false, error: "Invalid busy time detected. Check your dates." };
+      }
+      if (s < plan.dateFrom || e > plan.dateTo) {
+        return { ok: false, error: "Busy times must be within the plan window." };
+      }
+      rows.push({ participantId, start: s, end: e, source: "manual" });
     }
 
-    await prisma.calendarBusy.create({
-      data: { participantId, start: startDate, end: endDate, source: "manual" },
-    });
-  }
+    if (rows.length) {
+      await prisma.calendarBusy.createMany({ data: rows });
+    }
 
-  await recomputeAndStoreSuggestions(plan.id);
-  revalidatePath(`/p/${token}`);
+    await recomputeAndStoreSuggestions(plan.id);
+    revalidatePath(`/p/${token}`);
+    return { ok: true };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (e: any) {
+    return { ok: false, error: e?.message ?? "Something went wrong." };
+  }
+}
+function freeCountFor(plan: NonNullable<Awaited<ReturnType<typeof getPlanByToken>>>, start: Date, end: Date) {
+  return plan.participants.reduce((acc, p) => {
+    const clashes = p.busy.some(b => start < new Date(b.end) && new Date(b.start) < end);
+    return acc + (clashes ? 0 : 1);
+  }, 0);
 }
 
 async function removeBusy(formData: FormData) {
@@ -230,6 +253,21 @@ async function removeBusy(formData: FormData) {
   if (!plan) throw new Error("Plan not found");
 
   await prisma.calendarBusy.delete({ where: { id: busyId } });
+  await recomputeAndStoreSuggestions(plan.id);
+  revalidatePath(`/p/${token}`);
+}
+async function removeParticipant(formData: FormData) {
+  "use server";
+  const token = z.string().parse(formData.get("token"));
+  const participantId = z.string().parse(formData.get("participantId"));
+
+  const plan = await prisma.plan.findFirst({
+    where: { token },
+    select: { id: true },
+  });
+  if (!plan) throw new Error("Plan not found");
+
+  await prisma.participant.delete({ where: { id: participantId } }); // cascades busy rows
   await recomputeAndStoreSuggestions(plan.id);
   revalidatePath(`/p/${token}`);
 }
@@ -249,42 +287,15 @@ export default async function PublicPlanPage({ params }: { params: { token: stri
       <header className="section">
         <h1 className="h1">{plan.title}</h1>
         <p className="muted">
-          {new Date(plan.dateFrom).toLocaleString(undefined, fmtOpts(plan.tz))} –{" "}
-          {new Date(plan.dateTo).toLocaleString(undefined, fmtOpts(plan.tz))} · TZ{" "}
+          {fmt(plan.dateFrom, plan.tz)} – {fmt(plan.dateTo, plan.tz)}
           <code>{plan.tz}</code> · Window {plan.windowStart}:00–{plan.windowEnd}:00 ·{" "}
           {plan.durationMins} min · Min {plan.minAttendees}
         </p>
       </header>
   
       {/* Combined form */}
-      <section className="card">
-        <div className="card-body section">
-          <h2 className="h2">Join & add your availability</h2>
-          <form action={joinOrUpdateWithBusy} className="space-y-4">
-            <input type="hidden" name="token" value={token} />
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="field">
-                <span className="label">Email</span>
-                <input name="email" type="email" required className="input" placeholder="you@example.com" />
-              </label>
-              <label className="field">
-                <span className="label">Name (optional)</span>
-                <input name="name" className="input" placeholder="Your name" />
-              </label>
-            </div>
-  
-            <div className="field">
-              <span className="label">Busy block (optional)</span>
-              <span className="help">Add one now; you can add more later.</span>
-              <div className="grid gap-4 md:grid-cols-2">
-                <input name="start" type="datetime-local" className="input" />
-                <input name="end" type="datetime-local" className="input" />
-              </div>
-            </div>
-  
-            <button className="btn btn-primary">Save & Update</button>
-          </form>
-        </div>
+      <section>
+        <JoinAvailability token={token} action={joinOrUpdateWithBusy} />
       </section>
   
       {/* Participants */}
@@ -295,8 +306,17 @@ export default async function PublicPlanPage({ params }: { params: { token: stri
             {plan.participants.map((pt) => (
               <li key={pt.id} className="rounded-lg border border-slate-200 p-3">
                 <div className="flex items-center justify-between">
-                  <div className="font-medium">{pt.name ? `${pt.name} • ${pt.email}` : pt.email}</div>
-                  <span className="badge capitalize">{pt.status}</span>
+                  <div className="font-medium">
+                    {pt.name ? `${pt.name} • ${pt.email}` : pt.email}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="badge capitalize">{pt.status}</span>
+                    <form action={removeParticipant}>
+                      <input type="hidden" name="token" value={token} />
+                      <input type="hidden" name="participantId" value={pt.id} />
+                      <button className="btn btn-ghost btn-ghost-danger">Remove person</button>
+                    </form>
+                  </div>
                 </div>
   
                 {pt.busy.length > 0 ? (
@@ -304,14 +324,13 @@ export default async function PublicPlanPage({ params }: { params: { token: stri
                     {pt.busy.map((b) => (
                       <li key={b.id} className="flex items-center justify-between">
                         <span>
-                          {new Date(b.start).toLocaleString(undefined, fmtOpts(plan.tz))} →{" "}
-                          {new Date(b.end).toLocaleString(undefined, fmtOpts(plan.tz))}{" "}
+                          {fmt(b.start, plan.tz)} → {fmt(b.end, plan.tz)}
                           <span className="muted">({b.source})</span>
                         </span>
                         <form action={removeBusy}>
                           <input type="hidden" name="token" value={token} />
                           <input type="hidden" name="busyId" value={b.id} />
-                          <button className="btn btn-ghost text-red-600">Remove</button>
+                          <button className="btn btn-ghost btn-ghost-danger">Remove</button>
                         </form>
                       </li>
                     ))}
@@ -333,13 +352,17 @@ export default async function PublicPlanPage({ params }: { params: { token: stri
           {plan.suggestions.length > 0 ? (
             <ul className="space-y-2 text-sm">
               {plan.suggestions.map((s, i) => (
-                <li key={i} className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
-                  <div>
-                    <strong>{new Date(s.start).toLocaleString(undefined, fmtOpts(plan.tz))}</strong>{" "}
-                    → {new Date(s.end).toLocaleString(undefined, fmtOpts(plan.tz))}
-                  </div>
+                <li key={i} className="text-sm flex items-center justify-between rounded-lg border border-slate-200 p-3">
+                <div>
+                  <strong>{fmt(s.start, plan.tz)}</strong> → {fmt(s.end, plan.tz)}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="badge">
+                    {freeCountFor(plan, new Date(s.start), new Date(s.end))} can attend
+                  </span>
                   <span className="badge">score {Math.round(s.score)}</span>
-                </li>
+                </div>
+              </li>
               ))}
             </ul>
           ) : (

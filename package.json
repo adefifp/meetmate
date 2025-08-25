@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
+    "dev": "next dev",
+    "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "seed": "tsx prisma/seed.ts"
+    "postinstall": "prisma generate",
+    "prisma:deploy": "prisma migrate deploy",
+    "vercel-build": "prisma generate && prisma migrate deploy && next build"
   },
   "dependencies": {
     "@next-auth/prisma-adapter": "^1.0.7",
@@ -33,9 +34,6 @@
     "tailwindcss": "^4.1.12",
     "tsx": "^4.20.4",
     "typescript": "^5"
-  },
-  "scripts": {
-    "vercel-build":"next build"
   }
 
 }

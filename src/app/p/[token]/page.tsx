@@ -10,6 +10,8 @@ import JoinAvailability from "./JoinAvailability";
 import { sendInviteEmail } from "@/lib/mailer";
 import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
+import { makeGoogleCalendarUrl } from "@/lib/ics";
+
 
 
 export const dynamic = "force-dynamic";
@@ -319,6 +321,10 @@ function freeCountFor(plan: PlanT, start: Date, end: Date) {
   }
   return free;
 }
+function toGCalDateUTC(d: Date) {
+  return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
 
 async function removeBusy(formData: FormData) {
   "use server";
@@ -559,11 +565,9 @@ export default async function PublicPlanPage({
   params: Promise<{ token: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  // 👇 await the dynamic props
   const { token } = await params;
   const sp = await searchParams;
 
-  // Parse invite feedback counts from the URL
   const invitesParam = Array.isArray(sp.invites) ? sp.invites[0] : sp.invites;
   const failedParam  = Array.isArray(sp.failed)  ? sp.failed[0]  : sp.failed;
 
@@ -575,6 +579,29 @@ export default async function PublicPlanPage({
 
   const session = await getServerSession(authOptions);
   const isOwner = session?.user?.id === plan.ownerId;
+
+  const baseUrl =
+  process.env.NEXT_PUBLIC_APP_URL ??
+  process.env.NEXTAUTH_URL ??
+  "http://localhost:3000";
+const shareUrl = `${baseUrl}/p/${token}`;
+
+// Only safe to read if finalized:
+const gcalHref =
+  plan.finalStart && plan.finalEnd
+    ? (() => {
+        const startUtc = toGCalDateUTC(new Date(plan.finalStart));
+        const endUtc   = toGCalDateUTC(new Date(plan.finalEnd));
+        const params = new URLSearchParams({
+          action: "TEMPLATE",
+          text: plan.title,
+          details: `Plan: ${shareUrl}`,
+          dates: `${startUtc}/${endUtc}`,
+        });
+        return `https://calendar.google.com/calendar/render?${params.toString()}`;
+      })()
+    : undefined;
+
 
   return (
     <div className="container-page space-y-8">
@@ -591,6 +618,21 @@ export default async function PublicPlanPage({
             <div className="font-medium">Finalized Slot</div>
             <div className="text-sm">
               {fmt(plan.finalStart, plan.tz)} → {fmt(plan.finalEnd, plan.tz)}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {gcalHref && (
+                <a
+                  href={gcalHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-primary"
+                >
+                  Add to Google Calendar
+                </a>
+              )}
+              <a href={`/api/${token}/ics`} className="btn btn-ghost">
+                Download .ics
+              </a>
             </div>
             {isOwner && (
               <form action={clearFinal} className="mt-3">

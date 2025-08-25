@@ -32,7 +32,7 @@ export default function CreatePlanForm({
 
         <label className="field">
           <span className="label">Title</span>
-          <input name="title" required className="input" placeholder="Team sync" />
+          <input name="title" required className="input" placeholder="New Plan" />
         </label>
 
         <div className="grid gap-4 md:grid-cols-2">

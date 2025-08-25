@@ -102,7 +102,7 @@ export async function sendFinalizedEmail(opts: {
   });
 }
 
-/* -------------------------- internal utilities -------------------------- */
+
 function escapeHtml(s: string) {
   return s
     .replace(/&/g, "&amp;")

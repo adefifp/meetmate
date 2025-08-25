@@ -3,14 +3,14 @@
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 import JoinAvailability from "./JoinAvailability";
 import { sendInviteEmail } from "@/lib/mailer";
 import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
-import { makeGoogleCalendarUrl } from "@/lib/ics";
+
 
 
 
@@ -51,7 +51,6 @@ function withinWindow(startHour: number, endHour: number, a: number, b: number) 
   if (a <= b) return startHour >= a && endHour <= b;
   return startHour >= a || endHour <= b;
 }
-/* ------------------------ suggestions (compute) ------------------------ */
 type PlanForSuggest = {
   id: string;
   durationMins: number;
@@ -82,12 +81,12 @@ function computeSuggestions(plan: PlanForSuggest, max = 20) {
   for (const start of iterateByMinutes(dateFrom, addMinutes(dateTo, -durationMins), step)) {
     const end = addMinutes(start, durationMins);
 
-    // ✅ always declare these — no naked assignments
+
     const startHour = hourInTz(start, tz);
     const endHour = hourInTz(end, tz);
     if (!withinWindow(startHour, endHour, windowStart, windowEnd)) continue;
 
-    // count free people
+
     let freeCount = 0;
     for (const busy of busyLists) {
       const clash = busy.some((b) => overlaps(start, end, b.start, b.end));
@@ -95,7 +94,6 @@ function computeSuggestions(plan: PlanForSuggest, max = 20) {
     }
     if (freeCount < minAttendees) continue;
 
-    // scoring
     const busyCount = totalParticipants - freeCount;
     const hourCenter = (startHour + endHour) / 2;
     const distA = Math.abs(hourCenter - midHour);
@@ -109,7 +107,7 @@ function computeSuggestions(plan: PlanForSuggest, max = 20) {
   return out.sort((a, b) => b.score - a.score).slice(0, max);
 }
 
-/* --------------------- suggestions (persist to DB) --------------------- */
+
 async function recomputeAndStoreSuggestions(planId: string) {
   const plan = await prisma.plan.findUnique({
     where: { id: planId },
@@ -137,9 +135,8 @@ async function recomputeAndStoreSuggestions(planId: string) {
   ]);
 }
 
-/* ------------------------------ data fetch ----------------------------- */
+
 async function getPlanByToken(token: string) {
-  // include returns all scalar fields + requested relations
   return prisma.plan.findUnique({
     where: { token },
     include: {
@@ -167,13 +164,10 @@ type ParticipantT = PlanT["participants"][number];
 type BusyT = ParticipantT["busy"][number];
 type SuggestionT = PlanT["suggestions"][number];
 
-/* --------------------------- server actions ---------------------------- */
 
-// local enum values (avoid importing from @prisma/client)
 const ParticipantStatusValues = ["pending", "accepted", "declined"] as const;
 type ParticipantStatusT = (typeof ParticipantStatusValues)[number];
 
-// join/create participant + add busy intervals (client form uses this)
 async function joinOrUpdateWithBusy(
   _prev: ActionResult | null,
   formData: FormData
@@ -209,7 +203,6 @@ async function joinOrUpdateWithBusy(
     });
     if (!plan) return { ok: false, error: "Plan not found." };
 
-    // ensure participant exists / update name (normalize email)
     const existing = await prisma.participant.findFirst({
       where: { planId: plan.id, email: emailNorm },
       select: { id: true },
@@ -237,8 +230,6 @@ async function joinOrUpdateWithBusy(
         },
       });
     }
-
-    // parse + validate input intervals
     const rows = starts
       .map((s, i) => ({ start: new Date(s), end: new Date(ends[i]!) }))
       .filter(
@@ -254,12 +245,10 @@ async function joinOrUpdateWithBusy(
       return { ok: false, error: "Invalid busy time detected. Check your dates." };
     }
 
-    // clamp within plan window
     if (rows.some((r) => r.start < plan.dateFrom || r.end > plan.dateTo)) {
       return { ok: false, error: "Busy times must be within the plan window." };
     }
 
-    // coalesce submitted rows (merge overlapping/abutting)
     rows.sort((a, b) => +a.start - +b.start);
     const merged: typeof rows = [];
     for (const r of rows) {
@@ -273,7 +262,6 @@ async function joinOrUpdateWithBusy(
     }
 
     if (merged.length) {
-      // reject overlaps against existing busy
       const minStart = merged[0]!.start;
       const maxEnd = merged[merged.length - 1]!.end;
       const existingBusy = await prisma.calendarBusy.findMany({
@@ -434,12 +422,9 @@ function withinWindowMinutes(
   const we = windowEndHour * 60;
 
   if (windowStartHour <= windowEndHour) {
-    // Same-day window (e.g., 9→17): start & end must be on the same local day and within [ws,we]
     if (startLocal.ymd !== endLocal.ymd) return false;
     return startLocal.minutesOfDay >= ws && endLocal.minutesOfDay <= we;
   } else {
-    // Overnight window (e.g., 22→02): allow either side of midnight
-    // Valid if start is in [ws, 24*60) OR end is in [0, we]
     return startLocal.minutesOfDay >= ws || endLocal.minutesOfDay <= we;
   }
 }
@@ -468,7 +453,6 @@ async function clearFinal(formData: FormData) {
   revalidatePath(`/p/${token}`);
 }
 
-/* ----------------------------- invitations ----------------------------- */
 async function inviteParticipants(formData: FormData) {
   "use server";
 
@@ -557,7 +541,6 @@ async function inviteParticipants(formData: FormData) {
   redirect(`/p/${token}?invites=${sentCount}&failed=${failedCount}`);
 }
 
-/* --------------------------------- page -------------------------------- */
 export default async function PublicPlanPage({
   params,
   searchParams,
@@ -586,7 +569,6 @@ export default async function PublicPlanPage({
   "http://localhost:3000";
 const shareUrl = `${baseUrl}/p/${token}`;
 
-// Only safe to read if finalized:
 const gcalHref =
   plan.finalStart && plan.finalEnd
     ? (() => {
@@ -644,7 +626,6 @@ const gcalHref =
         )}
       </header>
 
-      {/* Invite banner (shows after redirect with ?invites&failed) */}
       {(invites > 0 || failed > 0) && (
         <div
           role="alert"
@@ -669,12 +650,10 @@ const gcalHref =
           </div>
         </div>
       )}
-      {/* Join + availability (client form with inline errors + success toast) */}
       <section>
         <JoinAvailability token={token} action={joinOrUpdateWithBusy} />
       </section>
 
-      {/* Invite people (owner only) */}
       {isOwner && (
         <section className="card">
           <div className="card-body section">
@@ -698,7 +677,6 @@ const gcalHref =
         </section>
       )}
 
-      {/* Participants */}
       <section className="card">
         <div className="card-body section">
           <h2 className="h2">Participants</h2>
@@ -749,7 +727,6 @@ const gcalHref =
         </div>
       </section>
 
-      {/* Suggestions / Finalize */}
       <section className="card">
         <div className="card-body section">
           <h2 className="h2">Suggested Slots</h2>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
-export const dynamic = "force-dynamic"; // avoid caching if you want
+export const dynamic = "force-dynamic"; 
 
 function pad(n: number) {
   return n.toString().padStart(2, "0");

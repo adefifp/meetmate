@@ -3,7 +3,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import CopyButton from "@/components/CopyButton";
 import ConfirmButton from "@/components/ConfirmButton";
@@ -25,7 +25,7 @@ async function deletePlan(formData: FormData) {
     throw new Error("Not allowed");
   }
 
-  await prisma.plan.delete({ where: { id } }); // cascades participants/busy/suggestions/emails
+  await prisma.plan.delete({ where: { id } });
   revalidatePath("/plans");
 }
 

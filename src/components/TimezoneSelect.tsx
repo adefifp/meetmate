@@ -27,18 +27,17 @@ export default function TimezoneSelect({
     return defaultValue ?? tz;
   }, [defaultValue]);
 
-  // Keep selected value if it's valid, else fallback to UTC
+
   const initial = React.useMemo(() => (all.includes(guess) ? guess : "UTC"), [all, guess]);
 
   return (
     <select name={name} defaultValue={initial} className="input">
-      {/* Common first */}
+ 
       <optgroup label="Common Time Zones">
         {FALLBACKS.map((tz) => (
           <option key={tz} value={tz}>{tz}</option>
         ))}
       </optgroup>
-      {/* Full list (if available) */}
       {all.length > FALLBACKS.length && (
         <optgroup label="All Time Zones">
           {all.map((tz) => (

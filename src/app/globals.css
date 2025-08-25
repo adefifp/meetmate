@@ -1,25 +1,24 @@
 @import "tailwindcss";
 
-/* Base theme (plain CSS so it never depends on @apply) */
 html { color-scheme: light; }
-body { background-color: #f8fafc; color: #0f172a; } /* slate-50 / slate-900 */
-a { color: #4f46e5; }               /* indigo-600 */
-a:hover { color: #4338ca; }         /* indigo-700 */
+body { background-color: #f8fafc; color: #0f172a; } 
+a { color: #4f46e5; }               
+a:hover { color: #4338ca; }         
 
-/* Layout tokens */
+
 .container-page { @apply mx-auto max-w-3xl px-4 md:px-6; }
 
-/* Card */
+
 .card { @apply bg-white rounded-2xl shadow-sm ring-1 ring-slate-200; }
 .card-body { @apply p-4 md:p-6; }
 .section { @apply space-y-4; }
 
-/* Typography */
+
 .h1 { @apply text-2xl md:text-3xl font-semibold tracking-tight; }
 .h2 { @apply text-lg md:text-xl font-medium; }
 .muted { @apply text-slate-600; }
 
-/* Form controls */
+
 .input {
   @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2
          focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500;
@@ -28,13 +27,13 @@ a:hover { color: #4338ca; }         /* indigo-700 */
 .label { @apply text-sm text-slate-700; }
 .help  { @apply text-xs text-slate-500; }
 
-/* Buttons */
+
 .btn {
   @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium
          focus:outline-none focus:ring-2 focus:ring-indigo-500
          transition-shadow;
 }
-/* IMPORTANT: no "btn" inside @apply here */
+
 .btn-primary {
   @apply bg-indigo-600 text-white shadow-sm hover:shadow-inner active:shadow-sm;
 }
@@ -42,5 +41,4 @@ a:hover { color: #4338ca; }         /* indigo-700 */
 .btn-ghost-neutral { @apply text-slate-700; }
 .btn-ghost-danger { @apply text-red-600 hover:bg-red-50; }
 
-/* Badges */
 .badge { @apply inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 ring-1 ring-slate-200; }

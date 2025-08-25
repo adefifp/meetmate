@@ -35,7 +35,9 @@
     "typescript": "^5"
   },
   "scripts": {
-    "build": "next build"  
+    "build": "next build",
+    "prisma:deploy": "prisma migrate deploy",
+    "vercel-build": "npm run prisma:deploy && next build"
   }
 
 }

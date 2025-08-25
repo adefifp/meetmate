@@ -1,55 +1,67 @@
-// src/app/api/p/[token]/ics/route.ts
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { makeICS } from "@/lib/ics";
-export const runtime = "nodejs";
-function sanitizeFilename(name: string) {
-  return (name || "event").replace(/[/\\?%*:|"<>]/g, "-").trim();
+
+export const dynamic = "force-dynamic"; // avoid caching if you want
+
+function pad(n: number) {
+  return n.toString().padStart(2, "0");
+}
+function toIcsUtc(dt: Date) {
+  const y = dt.getUTCFullYear();
+  const m = pad(dt.getUTCMonth() + 1);
+  const d = pad(dt.getUTCDate());
+  const hh = pad(dt.getUTCHours());
+  const mm = pad(dt.getUTCMinutes());
+  const ss = pad(dt.getUTCSeconds());
+  return `${y}${m}${d}T${hh}${mm}${ss}Z`;
+}
+function esc(s: string) {
+  return s.replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n");
 }
 
-export async function GET(
-  _req: Request,
-  ctx: { params: { token: string } }
-) {
-  const token = ctx.params.token;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function GET(_req: Request, context: any) {
+  const token = context?.params?.token as string | undefined;
+  if (!token) return NextResponse.json({ error: "Bad request" }, { status: 400 });
 
   const plan = await prisma.plan.findUnique({
     where: { token },
-    select: {
-      title: true,
-      finalStart: true,
-      finalEnd: true,
-      token: true,
-      tz: true,
-    },
+    select: { title: true, finalStart: true, finalEnd: true, tz: true },
   });
 
   if (!plan || !plan.finalStart || !plan.finalEnd) {
-    // Return a 404 *Response* (not notFound()) so you don’t get the Next.js 404 page.
-    return new Response("No finalized event.", { status: 404 });
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const baseUrl =
-    process.env.NEXTAUTH_URL ??
-    process.env.NEXT_PUBLIC_APP_URL ??
-    "http://localhost:3000";
-  const inviteUrl = `${baseUrl}/p/${plan.token}`;
+  const now = new Date();
+  const dtstamp = toIcsUtc(now);
+  const dtstart = toIcsUtc(new Date(plan.finalStart));
+  const dtend   = toIcsUtc(new Date(plan.finalEnd));
 
-  const ics = makeICS({
-    title: plan.title,
-    start: new Date(plan.finalStart),
-    end: new Date(plan.finalEnd),
-    description: `Event timezone: ${plan.tz}\\nPlan: ${inviteUrl}`,
-    url: inviteUrl,
-    uid: `${plan.token}@meetmate`,
-  });
+  const uid = `meetmate-${token}@${process.env.NEXT_PUBLIC_APP_URL ?? "localhost"}`;
 
-  const filename = `${sanitizeFilename(plan.title)}.ics`;
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//MeetMate//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:${uid}`,
+    `DTSTAMP:${dtstamp}`,
+    `DTSTART:${dtstart}`,
+    `DTEND:${dtend}`,
+    `SUMMARY:${esc(plan.title)}`,
+    `DESCRIPTION:${esc("Scheduled via MeetMate")}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+    ""
+  ].join("\r\n");
 
-  return new Response(ics, {
+  return new NextResponse(ics, {
     headers: {
       "Content-Type": "text/calendar; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${filename}"`,
-      "Cache-Control": "no-store",
+      "Content-Disposition": `attachment; filename="meetmate-${token}.ics"`,
     },
   });
 }

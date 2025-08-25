@@ -1,7 +1,7 @@
 // src/app/api/p/[token]/ics/route.ts
 import { prisma } from "@/lib/db";
 import { makeICS } from "@/lib/ics";
-
+export const runtime = "nodejs";
 function sanitizeFilename(name: string) {
   return (name || "event").replace(/[/\\?%*:|"<>]/g, "-").trim();
 }

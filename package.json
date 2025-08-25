@@ -33,5 +33,11 @@
     "tailwindcss": "^4.1.12",
     "tsx": "^4.20.4",
     "typescript": "^5"
+  },
+  "scripts": {
+    "build": "next build",
+    "prisma:deploy": "prisma migrate deploy",
+    "vercel-build": "npm run prisma:deploy && next build"
   }
+
 }

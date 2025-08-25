@@ -1,34 +1,44 @@
 // src/app/api/auth/[...nextauth]/route.ts
-import NextAuth, { NextAuthOptions } from "next-auth";
+import NextAuth, { type NextAuthOptions } from "next-auth";
 import EmailProvider from "next-auth/providers/email";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/db";
 
-console.log("[NextAuth] route module evaluated");
-console.log("ENV -> URL:", !!process.env.NEXTAUTH_URL, "SECRET:", !!process.env.NEXTAUTH_SECRET);
-
 export const authOptions: NextAuthOptions = {
-  debug: true,
   adapter: PrismaAdapter(prisma),
   providers: [
     EmailProvider({
-      server: process.env.EMAIL_SERVER,
+      server: {
+        host: "smtp.gmail.com",
+        port: 465,
+        secure: true,
+        auth: {
+          user: process.env.EMAIL_USER!, 
+          pass: process.env.EMAIL_PASS!,
+        },
+      },
       from: process.env.EMAIL_FROM,
     }),
   ],
   session: { strategy: "database" },
+  debug: true,
+  pages: {
+    signIn: "/auth/signin",  
+    verifyRequest: "/auth/verify-request",
+  },
+  logger: {
+    error(code, ...rest) {
+      console.error("NextAuth error", code, ...rest);
+    },
+  },
   callbacks: {
     async session({ session, user }) {
-      if (session.user) {
-        session.user.id = user.id;
+      if (session.user){
+        session.user.id = user.id
       }
       return session;
     },
   },
-  pages: {
-    signIn:"/auth/signin",
-  }
 };
-
 const handler = NextAuth(authOptions);
 export { handler as GET, handler as POST };

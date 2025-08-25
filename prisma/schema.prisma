@@ -10,7 +10,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = env("DATABASE_URL") 
 }
 
 model User {
@@ -94,6 +94,8 @@ model Plan {
   participants Participant[]
   suggestions  Suggestion[]
   emails       EmailLog[]
+  finalStart   DateTime?
+  finalEnd     DateTime?
 }
 
 model Participant {

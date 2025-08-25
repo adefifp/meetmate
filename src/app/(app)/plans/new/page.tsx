@@ -1,67 +1,101 @@
-import { z } from "zod";
-import { redirect } from "next/navigation";
+// src/app/(app)/plans/new/page.tsx
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/db";
-import { randomUUID } from "crypto";
+import { z } from "zod";
+import { redirect } from "next/navigation";
 import CreatePlanForm from "./CreatePlanForm";
 
-const PlanSchema = z.object({
-  title: z.string().min(3),
-  durationMins: z.coerce.number().int().positive(),
-  minAttendees: z.coerce.number().int().min(1),
-  tz: z.string().min(1),
-  dateFrom: z.coerce.date(),
-  dateTo: z.coerce.date(),
-  windowStart: z.coerce.number().int().min(0).max(23),
-  windowEnd: z.coerce.number().int().min(0).max(23),
-}).refine(d => d.dateFrom < d.dateTo, { path: ["dateTo"], message: "Window end must be after start." })
-  .refine(d => d.windowStart !== d.windowEnd, { path: ["windowEnd"], message: "Day window must span some hours." });
+export const dynamic = "force-dynamic";
 
-type ActionResult = { ok: true } | { ok: false; error: string };
+type Result = { ok: true } | { ok: false; error: string };
 
-export default function NewPlanPage() {
-  async function createPlan(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-    "use server";
+function spanMinutes(windowStart: number, windowEnd: number) {
+  const hours = windowEnd >= windowStart
+    ? (windowEnd - windowStart)
+    : (24 - windowStart + windowEnd);
+  return hours * 60;
+}
 
-    const parsed = PlanSchema.safeParse({
-      title: formData.get("title"),
-      durationMins: formData.get("durationMins"),
-      minAttendees: formData.get("minAttendees"),
-      tz: formData.get("tz"),
-      dateFrom: formData.get("dateFrom"),
-      dateTo: formData.get("dateTo"),
-      windowStart: formData.get("windowStart"),
-      windowEnd: formData.get("windowEnd"),
-    });
-    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid form data." };
+function isValidIanaTz(tz: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sv = (Intl as any).supportedValuesOf?.("timeZone");
+  return Array.isArray(sv) ? sv.includes(tz) : true;
+}
 
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) return { ok: false, error: "Please sign in." };
+async function createPlan(_prev: Result | null, formData: FormData): Promise<Result> {
+  "use server";
 
-    const plan = await prisma.plan.create({
-      data: {
-        token: randomUUID(),
-        ownerId: session.user.id,
-        title: parsed.data.title,
-        durationMins: parsed.data.durationMins,
-        minAttendees: parsed.data.minAttendees,
-        tz: parsed.data.tz,
-        dateFrom: parsed.data.dateFrom,
-        dateTo: parsed.data.dateTo,
-        windowStart: parsed.data.windowStart,
-        windowEnd: parsed.data.windowEnd,
-      },
-      select: { token: true },
-    });
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return { ok: false, error: "Please sign in." };
 
-    redirect(`/p/${plan.token}`); // success path leaves the page
+  const S = z.object({
+    title: z.string().min(1),
+    durationMins: z.coerce.number().int().positive(),
+    minAttendees: z.coerce.number().int().min(1),
+    tz: z.string().min(1),
+    dateFrom: z.string().min(1),
+    dateTo: z.string().min(1),
+    windowStart: z.coerce.number().int().min(0).max(23),
+    windowEnd: z.coerce.number().int().min(0).max(23),
+  });
+
+  const parsed = S.safeParse({
+    title: formData.get("title"),
+    durationMins: formData.get("durationMins"),
+    minAttendees: formData.get("minAttendees"),
+    tz: formData.get("tz"),
+    dateFrom: formData.get("dateFrom"),
+    dateTo: formData.get("dateTo"),
+    windowStart: formData.get("windowStart"),
+    windowEnd: formData.get("windowEnd"),
+  });
+
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid form." };
   }
 
-  return (
-    <div className="container-page space-y-6">
-      <h1 className="h1">Create a new plan</h1>
-      <CreatePlanForm action={createPlan} />
-    </div>
-  );
+  const { title, durationMins, minAttendees, tz, dateFrom, dateTo, windowStart, windowEnd } = parsed.data;
+
+  if (!isValidIanaTz(tz)) {
+    return { ok: false, error: "Please choose a valid timezone." };
+  }
+
+  const from = new Date(dateFrom);
+  const to = new Date(dateTo);
+  if (!(from instanceof Date && !isNaN(+from) && to instanceof Date && !isNaN(+to))) {
+    return { ok: false, error: "Dates are invalid." };
+  }
+  if (to <= from) {
+    return { ok: false, error: "End must be after start." };
+  }
+
+  if (durationMins > spanMinutes(windowStart, windowEnd)) {
+    return { ok: false, error: "Day window is too small to fit the duration." };
+  }
+
+  await prisma.plan.create({
+    data: {
+      ownerId: session.user.id,
+      title,
+      durationMins,
+      minAttendees,
+      tz,
+      dateFrom: from,
+      dateTo: to,
+      windowStart,
+      windowEnd,
+    },
+  });
+
+  redirect("/plans?created=1");
+}
+
+export default async function NewPlanPage() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    redirect("/auth/signin?callbackUrl=/plans/new");
+  }
+
+  return <CreatePlanForm action={createPlan} />;
 }

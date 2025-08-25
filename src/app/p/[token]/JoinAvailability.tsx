@@ -1,6 +1,7 @@
+// src/app/p/[token]/JoinAvailability.tsx
 "use client";
 
-import React from "react";
+import * as React from "react";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
@@ -14,6 +15,15 @@ export default function JoinAvailability({
   action: (prevState: ActionResult | null, formData: FormData) => Promise<ActionResult>;
 }) {
   const [state, formAction] = useActionState(action, null);
+  const [showSuccess, setShowSuccess] = React.useState(false);
+
+  React.useEffect(() => {
+    if (state?.ok) {
+      setShowSuccess(true);
+      const t = setTimeout(() => setShowSuccess(false), 1500);
+      return () => clearTimeout(t);
+    }
+  }, [state?.ok]);
 
   return (
     <form action={formAction} className="card">
@@ -26,6 +36,12 @@ export default function JoinAvailability({
             {state.error}
           </div>
         )}
+        {showSuccess && (
+        <div role="status" aria-live="polite" className="rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 px-3 py-2 text-sm">
+            Saved!
+        </div>
+        )}
+
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="field">
@@ -37,10 +53,25 @@ export default function JoinAvailability({
             <input name="name" className="input" placeholder="Your name" />
           </label>
         </div>
-
-        {/* Multiple busy blocks */}
-        <BusyRows />
-
+        <fieldset className="field">
+        <span className="label">RSVP</span>
+        <div className="flex items-center gap-4">
+            <label className="inline-flex items-center gap-2">
+            <input type="radio" name="status" value="accepted" />
+            <span>Accept</span>
+            </label>
+            <label className="inline-flex items-center gap-2">
+            <input type="radio" name="status" value="declined" />
+            <span>Decline</span>
+            </label>
+            <label className="inline-flex items-center gap-2">
+            <input type="radio" name="status" value="pending" defaultChecked />
+            <span>Decide later</span>
+            </label>
+        </div>
+        <span className="help">You can update this anytime.</span>
+        </fieldset>
+                <BusyRows />
         <Submit />
       </div>
     </form>
@@ -65,7 +96,7 @@ function BusyRows() {
         <div className="help">Add one or more busy intervals; suggestions avoid these.</div>
       </div>
       <div className="space-y-3">
-        {rows.map((r, i) => (
+        {rows.map((r) => (
           <div key={r.id} className="grid gap-3 md:grid-cols-2">
             <input name="start" type="datetime-local" className="input" />
             <div className="flex gap-2">

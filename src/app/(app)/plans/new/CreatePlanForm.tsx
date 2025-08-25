@@ -2,16 +2,24 @@
 
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
+import TimezoneSelect from "@/components/TimezoneSelect";
+import type { ActionResult } from "@/lib/actionTypes";
 
-type Result = { ok: true } | { ok: false; error: string };
+function SubmitButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button className="btn btn-primary" disabled={pending}>
+      {pending ? "Creating..." : "Create plan"}
+    </button>
+  );
+}
 
 export default function CreatePlanForm({
   action,
 }: {
-  action: (prev: Result | null, formData: FormData) => Promise<Result>;
+  action: (prev: ActionResult | null, formData: FormData) => Promise<ActionResult>;
 }) {
-  const [state, formAction] = useActionState(action, null);
-  const { pending } = useFormStatus();
+  const [state, formAction] = useActionState<ActionResult | null, FormData>(action, null);
 
   return (
     <form action={formAction} className="card">
@@ -30,45 +38,73 @@ export default function CreatePlanForm({
         <div className="grid gap-4 md:grid-cols-2">
           <label className="field">
             <span className="label">Duration (minutes)</span>
-            <input name="durationMins" type="number" min={5} defaultValue={30} required className="input" />
+            <input
+              name="durationMins"
+              type="number"
+              min={5}
+              defaultValue={30}
+              required
+              className="input"
+            />
           </label>
           <label className="field">
             <span className="label">Minimum attendees</span>
-            <input name="minAttendees" type="number" min={1} defaultValue={2} required className="input" />
+            <input
+              name="minAttendees"
+              type="number"
+              min={1}
+              defaultValue={2}
+              required
+              className="input"
+            />
           </label>
         </div>
 
         <label className="field">
           <span className="label">Timezone (IANA)</span>
-          <input name="tz" required className="input" placeholder="America/New_York" />
-          <span className="help">Use a valid IANA TZ like America/Los_Angeles</span>
+          <TimezoneSelect name="tz" />
+          <span className="help">Choose a valid IANA timezone</span>
         </label>
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="field">
-            <span className="label">Window start (date/time)</span>
+            <span className="label">Window Start (date/time)</span>
             <input name="dateFrom" type="datetime-local" required className="input" />
           </label>
           <label className="field">
-            <span className="label">Window end (date/time)</span>
+            <span className="label">Window End (date/time)</span>
             <input name="dateTo" type="datetime-local" required className="input" />
           </label>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="field">
-            <span className="label">Day window start (0–23)</span>
-            <input name="windowStart" type="number" min={0} max={23} defaultValue={9} required className="input" />
+            <span className="label">Day Window Hour Start (0–23)</span>
+            <input
+              name="windowStart"
+              type="number"
+              min={0}
+              max={23}
+              defaultValue={9}
+              required
+              className="input"
+            />
           </label>
           <label className="field">
-            <span className="label">Day window end (0–23)</span>
-            <input name="windowEnd" type="number" min={0} max={23} defaultValue={18} required className="input" />
+            <span className="label">Day Window Hour End (0–23)</span>
+            <input
+              name="windowEnd"
+              type="number"
+              min={0}
+              max={23}
+              defaultValue={18}
+              required
+              className="input"
+            />
           </label>
         </div>
 
-        <button className="btn btn-primary" disabled={pending}>
-          {pending ? "Creating..." : "Create plan"}
-        </button>
+        <SubmitButton />
       </div>
     </form>
   );

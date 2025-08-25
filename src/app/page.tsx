@@ -10,7 +10,7 @@ export default async function HomePage() {
   return (
     <div className="container-page space-y-10 py-10">
       <section className="section">
-        <h1 className="h1">MeetMate Lite</h1>
+        <h1 className="h1">MeetMate</h1>
         <p className="muted max-w-prose">
           A full-stack project: email magic-link auth, shareable plans,
           participant availability, and smart slot suggestions — built with Next.js,
